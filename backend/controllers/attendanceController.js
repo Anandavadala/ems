@@ -102,16 +102,28 @@ const punchOut = async (req, res) => {
 const manualEntry = async (req, res) => {
   try {
     const { employee_id, date, status, punch_in, punch_out, wfh, notes } = req.body;
+
+    // frontend sends bare HH:MM strings from <input type="time">; combine with date for TIMESTAMPTZ
+    const punchInTs = punch_in ? `${date}T${punch_in}:00` : null;
+    const punchOutTs = punch_out ? `${date}T${punch_out}:00` : null;
+
+    let workHours = null;
+    if (punchInTs && punchOutTs) {
+      workHours = ((new Date(punchOutTs) - new Date(punchInTs)) / (1000 * 60 * 60)).toFixed(2);
+    }
+
     await pool.query(
-      `INSERT INTO attendance (employee_id, date, punch_in, punch_out, status, wfh, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO attendance (employee_id, date, punch_in, punch_out, work_hours, status, wfh, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (employee_id, date) DO UPDATE SET 
          punch_in = EXCLUDED.punch_in, punch_out = EXCLUDED.punch_out,
+         work_hours = EXCLUDED.work_hours,
          status = EXCLUDED.status, wfh = EXCLUDED.wfh, notes = EXCLUDED.notes, updated_at = NOW()`,
-      [employee_id, date, punch_in, punch_out, status || 'present', wfh || false, notes || '']
+      [employee_id, date, punchInTs, punchOutTs, workHours, status || 'present', wfh || false, notes || '']
     );
     return res.json({ success: true, message: 'Attendance recorded.' });
   } catch (err) {
+    console.error('ManualEntry error:', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
